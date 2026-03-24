@@ -1,0 +1,14 @@
+{
+  "name": "itsaplane",
+  "version": "1.0.0",
+  "description": "LED dot-matrix flight tracker dashboard",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0"
+  }
+}

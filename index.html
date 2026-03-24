@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>It's a Plane</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a0a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Share Tech Mono', 'VT323', 'Courier New', monospace;
+            padding: 20px;
+            color: #e0e0e0;
+        }
+
+        .board-container {
+            width: 100%;
+            max-width: 900px;
+        }
+
+        /* LED Board Display */
+        .led-board {
+            background: #111;
+            border: 4px solid #333;
+            border-radius: 8px;
+            padding: 24px 28px;
+            box-shadow: 
+                0 0 30px rgba(0,0,0,0.8),
+                inset 0 0 60px rgba(0,0,0,0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Subtle scanline effect */
+        .led-board::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0,0,0,0.15) 2px,
+                rgba(0,0,0,0.15) 4px
+            );
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .led-board > * {
+            position: relative;
+            z-index: 2;
+        }
+
+        /* State screens */
+        .state-screen {
+            text-align: center;
+            padding: 50px 20px;
+        }
+
+        .state-screen h2 {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 28px;
+            margin-bottom: 16px;
+            color: #f0c040;
+            text-shadow: 0 0 10px rgba(240,192,64,0.4);
+        }
+
+        .state-screen p {
+            font-size: 16px;
+            color: #aaa;
+            margin-bottom: 16px;
+            font-family: 'Share Tech Mono', monospace;
+        }
+
+        .state-screen .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid #333;
+            border-top: 3px solid #f0c040;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .state-screen button, .settings-bar button {
+            background: #222;
+            color: #f0c040;
+            border: 2px solid #f0c040;
+            padding: 10px 28px;
+            border-radius: 4px;
+            font-size: 15px;
+            cursor: pointer;
+            font-family: 'Share Tech Mono', monospace;
+            font-weight: 400;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+
+        .state-screen button:hover, .settings-bar button:hover {
+            background: #f0c040;
+            color: #111;
+        }
+
+        .error-msg {
+            color: #ff4444;
+            font-weight: 400;
+            text-shadow: 0 0 8px rgba(255,68,68,0.3);
+        }
+
+        /* Flight display */
+        #flight-display {
+            display: none;
+        }
+
+        /* Main content: 2-column layout */
+        .flight-main {
+            display: flex;
+            gap: 20px;
+        }
+
+        /* Left column: identity */
+        .flight-left {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* Right column: stats */
+        .flight-right {
+            flex: 0 0 auto;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        /* Top row: logo + airline name */
+        .identity-top {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 4px;
+        }
+
+        .airline-logo {
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+
+        .airline-logo-placeholder {
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            color: #555;
+            flex-shrink: 0;
+        }
+
+        .identity-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+
+        .airline-name {
+            font-size: 28px;
+            color: #fff;
+            text-shadow: 0 0 8px rgba(255,255,255,0.2);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .route-code {
+            font-size: 24px;
+            color: #f0c040;
+            text-shadow: 0 0 10px rgba(240,192,64,0.3);
+            letter-spacing: 2px;
+        }
+
+        .aircraft-type {
+            font-size: 20px;
+            color: #ccc;
+        }
+
+        /* Airport names */
+        .airport-names {
+            font-size: 20px;
+            color: #ddd;
+            margin-top: 8px;
+            line-height: 1.4;
+        }
+
+        .airport-names .origin {
+            color: #fff;
+        }
+
+        .airport-names .dest {
+            color: #ccc;
+        }
+
+        /* Right side stats */
+        .stat-line {
+            font-size: 22px;
+            color: #fff;
+            margin-bottom: 4px;
+            text-shadow: 0 0 6px rgba(255,255,255,0.15);
+        }
+
+        .stat-label {
+            color: #888;
+        }
+
+        .stat-value {
+            color: #fff;
+        }
+
+        /* Emergency banner */
+        .emergency-banner {
+            background: #cc0000;
+            color: #fff;
+            text-align: center;
+            padding: 6px 12px;
+            font-size: 18px;
+            margin-bottom: 12px;
+            letter-spacing: 2px;
+            display: none;
+            text-shadow: 0 0 10px rgba(255,255,255,0.3);
+            animation: emergencyBlink 1s infinite;
+        }
+
+        @keyframes emergencyBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        /* Progress bar */
+        .progress-section {
+            margin-top: 12px;
+            display: none;
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: #f0c040;
+            border-radius: 3px;
+            transition: width 0.5s ease;
+            box-shadow: 0 0 8px rgba(240,192,64,0.4);
+        }
+
+        .progress-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 4px;
+            font-size: 14px;
+            color: #888;
+        }
+
+        /* Separator */
+        .board-separator {
+            height: 1px;
+            background: #333;
+            margin: 16px 0;
+        }
+
+        /* Bottom info row */
+        .bottom-info {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+            font-size: 16px;
+            color: #888;
+        }
+
+        .bottom-info .info-item {
+            display: flex;
+            gap: 6px;
+        }
+
+        .bottom-info .info-label {
+            color: #666;
+        }
+
+        .bottom-info .info-value {
+            color: #aaa;
+        }
+
+        /* Footer */
+        .board-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid #222;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .board-footer .brand {
+            color: #666;
+            letter-spacing: 2px;
+        }
+
+        .board-footer .distance {
+            color: #f0c040;
+            font-size: 16px;
+            text-shadow: 0 0 8px rgba(240,192,64,0.2);
+        }
+
+        /* Settings bar */
+        .settings-bar {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+
+        .settings-bar label {
+            font-size: 14px;
+            color: #666;
+            font-family: 'Share Tech Mono', monospace;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .settings-bar input[type="number"] {
+            width: 60px;
+            padding: 4px 8px;
+            border: 1px solid #444;
+            border-radius: 3px;
+            font-size: 14px;
+            font-family: 'Share Tech Mono', monospace;
+            background: #1a1a1a;
+            color: #f0c040;
+            text-align: center;
+        }
+
+        .settings-bar input[type="checkbox"] {
+            accent-color: #f0c040;
+        }
+
+        .coord-display {
+            font-size: 12px;
+            color: #444;
+            text-align: center;
+            margin-top: 8px;
+            font-family: 'Share Tech Mono', monospace;
+        }
+
+        /* Responsive */
+        @media (max-width: 700px) {
+            .led-board {
+                padding: 16px;
+            }
+
+            .flight-main {
+                flex-direction: column;
+            }
+
+            .flight-right {
+                text-align: left;
+            }
+
+            .airline-name {
+                font-size: 22px;
+            }
+
+            .route-code {
+                font-size: 20px;
+            }
+
+            .aircraft-type {
+                font-size: 16px;
+            }
+
+            .airport-names {
+                font-size: 16px;
+            }
+
+            .stat-line {
+                font-size: 18px;
+            }
+
+            .airline-logo, .airline-logo-placeholder {
+                width: 60px;
+                height: 60px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="board-container">
+    <div class="led-board">
+        <!-- Location Permission Screen -->
+        <div id="permission-screen" class="state-screen">
+            <h2>✈ IT'S A PLANE</h2>
+            <p>Find the closest aircraft flying near you.</p>
+            <p>Choose how to set your location:</p>
+            <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+                <button onclick="requestLocation()">📍 USE MY LOCATION</button>
+                <button onclick="useEmpireState()">🏙 EMPIRE STATE BUILDING</button>
+            </div>
+        </div>
+
+        <!-- Loading Screen -->
+        <div id="loading-screen" class="state-screen" style="display:none;">
+            <div class="spinner"></div>
+            <h2>SCANNING SKIES...</h2>
+            <p>Searching for aircraft near your location</p>
+        </div>
+
+        <!-- Error Screen -->
+        <div id="error-screen" class="state-screen" style="display:none;">
+            <h2>NO SIGNAL</h2>
+            <p id="error-message" class="error-msg"></p>
+            <button onclick="retrySearch()">RETRY</button>
+        </div>
+
+        <!-- Flight Display -->
+        <div id="flight-display">
+            <div class="emergency-banner" id="emergency-banner">*** EMERGENCY — SQUAWK 7700 ***</div>
+
+            <div class="flight-main">
+                <div class="flight-left">
+                    <div class="identity-top">
+                        <div id="logo-container">
+                            <div class="airline-logo-placeholder">✈</div>
+                        </div>
+                        <div class="identity-text">
+                            <div class="airline-name" id="airline-name">---</div>
+                            <div class="route-code" id="route-code">---</div>
+                            <div class="aircraft-type" id="aircraft-type">---</div>
+                        </div>
+                    </div>
+                    <div class="airport-names" id="airport-names"></div>
+                </div>
+                <div class="flight-right">
+                    <div class="stat-line"><span class="stat-label">Alt: </span><span class="stat-value" id="altitude">---</span></div>
+                    <div class="stat-line"><span class="stat-label">Spd: </span><span class="stat-value" id="ground-speed">---</span></div>
+                    <div class="stat-line"><span class="stat-label">Trk: </span><span class="stat-value" id="track">---</span></div>
+                    <div class="stat-line"><span class="stat-label">Vr:  </span><span class="stat-value" id="vert-rate">---</span></div>
+                </div>
+            </div>
+
+            <div class="progress-section" id="progress-section">
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
+                </div>
+                <div class="progress-labels">
+                    <span id="miles-flown">0 km flown</span>
+                    <span id="miles-to-go">0 km to go</span>
+                </div>
+            </div>
+
+            <div class="board-separator"></div>
+
+            <div class="bottom-info">
+                <div class="info-item">
+                    <span class="info-label">Sqwk:</span>
+                    <span class="info-value" id="squawk">---</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Hdg:</span>
+                    <span class="info-value" id="nav-heading">---</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Reg:</span>
+                    <span class="info-value" id="registration">---</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">QNH:</span>
+                    <span class="info-value" id="qnh">---</span>
+                </div>
+            </div>
+
+            <div class="board-footer">
+                <div class="brand">✈ IT'S A PLANE</div>
+                <div class="distance" id="footer-distance"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings (outside the board for clean look) -->
+    <div id="settings-area">
+        <div class="settings-bar" id="settings-bar" style="display:none;">
+            <label>
+                Radius:
+                <input type="number" id="radius-input" value="25" min="1" max="250">
+                mi
+            </label>
+            <label>
+                <input type="checkbox" id="prefer-airliners" checked>
+                Prefer Airliners
+            </label>
+            <button onclick="retrySearch()">REFRESH</button>
+        </div>
+        <div class="coord-display" id="coord-display"></div>
+    </div>
+</div>
+
+<script>
+// ========================
+// Aircraft database (from aircrafts.csv)
+// ========================
+const AIRCRAFT_DB = {
+    "A124":"Antonov An-124 Ruslan","A140":"Antonov An-140","A148":"Antonov An-148","A158":"Antonov An-158",
+    "A19N":"Airbus A319neo","A20N":"Airbus A320neo","A21N":"Airbus A321neo","A225":"Antonov An-225 Mriya",
+    "A306":"Airbus A300-600","A30B":"Airbus A300B2/B4/C4","A310":"Airbus A310",
+    "A318":"Airbus A318","A319":"Airbus A319","A320":"Airbus A320","A321":"Airbus A321",
+    "A332":"Airbus A330-200","A333":"Airbus A330-300","A337":"Airbus A330-700 BelugaXL",
+    "A338":"Airbus A330-800","A339":"Airbus A330-900","A342":"Airbus A340-200","A343":"Airbus A340-300",
+    "A345":"Airbus A340-500","A346":"Airbus A340-600","A359":"Airbus A350-900","A35K":"Airbus A350-1000",
+    "A388":"Airbus A380-800","A3ST":"Airbus A300-600ST Beluga","A400":"Airbus A400M Atlas",
+    "A748":"Hawker Siddeley HS 748","AJ27":"Comac ARJ21-700 / C909",
+    "AN12":"Antonov An-12","AN24":"Antonov An-24","AN26":"Antonov An-26","AN28":"Antonov An-28",
+    "AN30":"Antonov An-30","AN32":"Antonov An-32","AN72":"Antonov An-72/An-74",
+    "AT43":"ATR 42-300/320","AT45":"ATR 42-500","AT46":"ATR 42-600",
+    "AT72":"ATR 72-201/202","AT73":"ATR 72-211/212","AT75":"ATR 72-500","AT76":"ATR 72-600",
+    "ATP":"British Aerospace ATP","B190":"Beechcraft 1900",
+    "B37M":"Boeing 737 MAX 7","B38M":"Boeing 737 MAX 8","B39M":"Boeing 737 MAX 9","B3XM":"Boeing 737 MAX 10",
+    "B461":"BAe 146-100","B462":"BAe 146-200","B463":"BAe 146-300",
+    "B52":"Boeing B-52 Stratofortress","B703":"Boeing 707","B712":"Boeing 717","B720":"Boeing 720B",
+    "B721":"Boeing 727-100","B722":"Boeing 727-200",
+    "B732":"Boeing 737-200","B733":"Boeing 737-300","B734":"Boeing 737-400","B735":"Boeing 737-500",
+    "B736":"Boeing 737-600","B737":"Boeing 737-700","B738":"Boeing 737-800","B739":"Boeing 737-900",
+    "B741":"Boeing 747-100","B742":"Boeing 747-200","B743":"Boeing 747-300","B744":"Boeing 747-400",
+    "B748":"Boeing 747-8","B74R":"Boeing 747SR","B74S":"Boeing 747SP",
+    "B752":"Boeing 757-200","B753":"Boeing 757-300",
+    "B762":"Boeing 767-200","B763":"Boeing 767-300","B764":"Boeing 767-400ER",
+    "B772":"Boeing 777-200","B773":"Boeing 777-300","B778":"Boeing 777-8","B779":"Boeing 777-9",
+    "B77L":"Boeing 777-200LR","B77W":"Boeing 777-300ER",
+    "B788":"Boeing 787-8","B789":"Boeing 787-9","B78X":"Boeing 787-10",
+    "BA11":"BAC One-Eleven","BCS1":"Airbus A220-100","BCS3":"Airbus A220-300",
+    "BE20":"Beechcraft King Air 200","BE40":"Hawker 400","BE99":"Beechcraft Model 99",
+    "C130":"Lockheed Hercules","C212":"CASA 212 Aviocar",
+    "C25A":"Cessna Citation CJ2","C25B":"Cessna Citation CJ3","C25C":"Cessna Citation CJ4",
+    "C30J":"Lockheed Martin C-130J Hercules","C5M":"Lockheed C-5M Super Galaxy",
+    "C500":"Cessna Citation I","C510":"Cessna Citation Mustang","C525":"Cessna CitationJet",
+    "C550":"Cessna Citation II","C560":"Cessna Citation V","C56X":"Cessna Citation Excel",
+    "C650":"Cessna Citation III/VI/VII","C680":"Cessna Citation Sovereign",
+    "C68A":"Cessna Citation Latitude","C700":"Cessna Citation Longitude","C750":"Cessna Citation X",
+    "C919":"Comac C919","CL30":"Bombardier Challenger 300","CL60":"Canadair Challenger 600",
+    "CN35":"CASA/IPTN CN-235",
+    "CRJ1":"CRJ 100","CRJ2":"CRJ 200","CRJ7":"CRJ 700","CRJ9":"CRJ 900","CRJX":"CRJ 1000",
+    "D228":"Dornier 228","D328":"Dornier Do.328",
+    "DC10":"Douglas DC-10","DC85":"Douglas DC-8-50","DC86":"Douglas DC-8-62","DC87":"Douglas DC-8-72",
+    "DC91":"Douglas DC-9-10","DC92":"Douglas DC-9-20","DC93":"Douglas DC-9-30",
+    "DC94":"Douglas DC-9-40","DC95":"Douglas DC-9-50",
+    "DH8A":"Dash 8-100","DH8B":"Dash 8-200","DH8C":"Dash 8-300","DH8D":"Dash 8-400",
+    "DHC5":"DHC-5 Buffalo","DHC6":"DHC-6 Twin Otter","DHC7":"DHC-7 Dash 7",
+    "E110":"Embraer 110 Bandeirante","E120":"Embraer 120 Brasilia",
+    "E135":"Embraer RJ135","E145":"Embraer RJ145","E170":"Embraer 170",
+    "E190":"Embraer 190","E195":"Embraer 195","E290":"Embraer E190-E2","E295":"Embraer E195-E2",
+    "E35L":"Embraer Legacy 600","E50P":"Embraer Phenom 100",
+    "E545":"Embraer Legacy 450","E550":"Embraer Legacy 500","E55P":"Embraer Phenom 300",
+    "E75L":"Embraer 175","E75S":"Embraer 175",
+    "EA50":"Eclipse 500","F100":"Fokker 100","F27":"Fokker F27","F28":"Fokker F28",
+    "F2TH":"Dassault Falcon 2000","F50":"Fokker 50","F70":"Fokker 70",
+    "F900":"Dassault Falcon 900","FA50":"Dassault Falcon 50","FA6X":"Dassault Falcon 6X","FA7X":"Dassault Falcon 7X",
+    "G280":"Gulfstream G280","GL5T":"Bombardier Global 5000","GLEX":"Bombardier Global Express",
+    "GLF4":"Gulfstream IV","GLF5":"Gulfstream V","GLF6":"Gulfstream G650","GA7C":"Gulfstream G700",
+    "H25B":"Hawker 800","H25C":"Hawker 1000","HDJT":"Honda HA-420",
+    "IL18":"Ilyushin Il-18","IL62":"Ilyushin Il-62","IL76":"Ilyushin Il-76",
+    "IL86":"Ilyushin Il-86","IL96":"Ilyushin Il-96",
+    "J328":"Dornier 328JET","JS31":"Jetstream 31","JS32":"Jetstream 32","JS41":"Jetstream 41",
+    "K35R":"Boeing KC-135 Stratotanker","L101":"Lockheed L-1011 Tristar","L188":"Lockheed L-188 Electra","L410":"LET 410",
+    "LJ35":"Learjet 35/36","LJ60":"Learjet 60",
+    "MD11":"McDonnell Douglas MD-11","MD81":"MD-81","MD82":"MD-82","MD83":"MD-83",
+    "MD87":"MD-87","MD88":"MD-88","MD90":"MD-90",
+    "P8":"Boeing P-8 Poseidon","P180":"Piaggio P.180 Avanti","PC24":"Pilatus PC-24",
+    "RJ1H":"Avro RJ100","RJ70":"Avro RJ70","RJ85":"Avro RJ85",
+    "SB20":"Saab 2000","SF34":"Saab 340",
+    "SH33":"Shorts SD.330","SH36":"Shorts SD.360","SU95":"Sukhoi Superjet 100",
+    "SW4":"Fairchild Metroliner",
+    "T134":"Tupolev Tu-134","T154":"Tupolev Tu-154","T204":"Tupolev Tu-204/Tu-214",
+    "Y12":"Harbin Y-12","YK40":"Yakovlev Yak-40","YK42":"Yakovlev Yak-42","YS11":"NAMC YS-11"
+};
+
+// Airline name mapping (ICAO code -> airline name)
+const AIRLINE_NAMES = {
+    "AAL":"American Airlines","AAR":"Asiana Airlines","ACA":"Air Canada","AFR":"Air France",
+    "AIC":"Air India","AIZ":"Arkia","ALK":"SriLankan Airlines","ANA":"All Nippon Airways",
+    "ANZ":"Air New Zealand","ASA":"Alaska Airlines","AUA":"Austrian Airlines","AZA":"Alitalia",
+    "BAW":"British Airways","BER":"Norse Atlantic","CAL":"China Airlines","CCA":"Air China",
+    "CEB":"Cebu Pacific","CPA":"Cathay Pacific","CSN":"China Southern","DAL":"Delta Air Lines",
+    "DLH":"Lufthansa","EIN":"Aer Lingus","ELY":"El Al","ETH":"Ethiopian Airlines",
+    "ETD":"Etihad Airways","EVA":"EVA Air","FDX":"FedEx Express","FIN":"Finnair",
+    "GIA":"Garuda Indonesia","HAL":"Hawaiian Airlines","IBE":"Iberia","ICE":"Icelandair",
+    "JAL":"Japan Airlines","JBU":"JetBlue Airways","KAL":"Korean Air","KLM":"KLM",
+    "LAN":"LATAM Chile","LOT":"LOT Polish","MAU":"Air Mauritius","MAS":"Malaysia Airlines",
+    "MEA":"Middle East Airlines","MSR":"EgyptAir","NAX":"Norwegian","NKS":"Spirit Airlines",
+    "PAL":"Philippine Airlines","QFA":"Qantas","QTR":"Qatar Airways","RAM":"Royal Air Maroc",
+    "RYR":"Ryanair","SAS":"SAS Scandinavian","SAA":"South African Airways","SIA":"Singapore Airlines",
+    "SKW":"SkyWest Airlines","SLK":"SilkAir","SWA":"Southwest Airlines","SWR":"Swiss International",
+    "TAP":"TAP Air Portugal","THA":"Thai Airways","THY":"Turkish Airlines","UAE":"Emirates",
+    "UAL":"United Airlines","UPS":"UPS Airlines","USA":"US Airways","UTY":"ExpressJet",
+    "VIR":"Virgin Atlantic","VOZ":"Virgin Australia","WJA":"WestJet"
+};
+
+// ========================
+// Utility functions
+// ========================
+const COMPASS_ARROWS = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"];
+
+function degreesToCompass(degrees) {
+    if (degrees === null || degrees === undefined) return "";
+    degrees = degrees % 360;
+    const index = Math.round((degrees + 22.5) / 45) % 8;
+    return COMPASS_ARROWS[index];
+}
+
+// Conversions
+function feetToKm(feet) {
+    return (feet * 0.0003048).toFixed(1);
+}
+
+function knotsToKph(knots) {
+    return Math.round(knots * 1.852);
+}
+
+function ftMinToKph(ftMin) {
+    // ft/min to km/h: multiply by 0.018288
+    return Math.round(Math.abs(ftMin) * 0.018288);
+}
+
+function milesToKm(miles) {
+    return (miles * 1.60934).toFixed(1);
+}
+
+function formatNumber(num) {
+    if (num === null || num === undefined || num === 'Unknown') return '---';
+    return Number(num).toLocaleString();
+}
+
+// Haversine distance in miles
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 3958.8;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+// Get airline name from callsign (first 3 chars = ICAO airline code)
+function getAirlineName(callsign, routeAirlineCode) {
+    // Try route airline code first
+    if (routeAirlineCode && AIRLINE_NAMES[routeAirlineCode]) {
+        return AIRLINE_NAMES[routeAirlineCode];
+    }
+    // Try extracting from callsign (first 3 letters)
+    if (callsign && callsign.length >= 3) {
+        const code = callsign.substring(0, 3).toUpperCase();
+        if (AIRLINE_NAMES[code]) return AIRLINE_NAMES[code];
+    }
+    return callsign || '---';
+}
+
+// ========================
+// State
+// ========================
+let userLat = null;
+let userLon = null;
+
+// Empire State Building coordinates (default fallback)
+const ESB_LAT = 40.748817;
+const ESB_LON = -73.985428;
+let locationLabel = '';
+
+// ========================
+// Location
+// ========================
+function useEmpireState() {
+    userLat = ESB_LAT;
+    userLon = ESB_LON;
+    locationLabel = 'Empire State Building';
+    document.getElementById('permission-screen').style.display = 'none';
+    document.getElementById('loading-screen').style.display = 'block';
+    fetchFlightData();
+}
+
+function requestLocation() {
+    if (!navigator.geolocation) {
+        // Geolocation not supported — fall back to Empire State Building
+        useEmpireState();
+        return;
+    }
+
+    document.getElementById('permission-screen').style.display = 'none';
+    document.getElementById('loading-screen').style.display = 'block';
+
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            userLat = position.coords.latitude;
+            userLon = position.coords.longitude;
+            locationLabel = 'Your Location';
+            fetchFlightData();
+        },
+        (error) => {
+            // On any geolocation error, fall back to Empire State Building
+            console.log('Geolocation failed, defaulting to Empire State Building:', error.message);
+            userLat = ESB_LAT;
+            userLon = ESB_LON;
+            locationLabel = 'Empire State Building (default)';
+            fetchFlightData();
+        },
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    );
+}
+
+function showError(msg) {
+    document.getElementById('loading-screen').style.display = 'none';
+    document.getElementById('permission-screen').style.display = 'none';
+    document.getElementById('flight-display').style.display = 'none';
+    document.getElementById('settings-bar').style.display = 'none';
+    document.getElementById('error-screen').style.display = 'block';
+    document.getElementById('error-message').textContent = msg;
+}
+
+function retrySearch() {
+    if (userLat && userLon) {
+        document.getElementById('error-screen').style.display = 'none';
+        document.getElementById('flight-display').style.display = 'none';
+        document.getElementById('loading-screen').style.display = 'block';
+        fetchFlightData();
+    } else {
+        document.getElementById('error-screen').style.display = 'none';
+        document.getElementById('flight-display').style.display = 'none';
+        document.getElementById('permission-screen').style.display = 'block';
+        requestLocation();
+    }
+}
+
+// ========================
+// API calls
+// ========================
+async function fetchFlightData() {
+    const radius = document.getElementById('radius-input')?.value || 25;
+    const preferAirliners = document.getElementById('prefer-airliners')?.checked ? 1 : 0;
+
+    document.getElementById('permission-screen').style.display = 'none';
+    document.getElementById('loading-screen').style.display = 'block';
+    document.getElementById('error-screen').style.display = 'none';
+    document.getElementById('flight-display').style.display = 'none';
+    document.getElementById('settings-bar').style.display = 'none';
+
+    try {
+        const adsbUrl = `/api/aircraft?lat=${userLat}&lon=${userLon}&radius=${radius}`;
+        const res = await fetch(adsbUrl);
+        if (!res.ok) throw new Error(`ADS-B API error: ${res.status}`);
+        const data = await res.json();
+
+        const aircraft = data.ac || [];
+        if (aircraft.length === 0) {
+            showError(`No aircraft detected within ${radius} miles. Try increasing the radius.`);
+            return;
+        }
+
+        // Find closest flight
+        let closestIdx = 0;
+        let closestDist = Infinity;
+
+        for (let i = 0; i < aircraft.length; i++) {
+            const cat = aircraft[i].category || '';
+            if (preferAirliners === 0 || ['A3', 'A4', 'A5'].includes(cat)) {
+                const dist = parseFloat(aircraft[i].dst || 999999);
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    closestIdx = i;
+                }
+            }
+        }
+
+        // Fallback to any aircraft
+        if (closestDist === Infinity) {
+            for (let i = 0; i < aircraft.length; i++) {
+                const dist = parseFloat(aircraft[i].dst || 999999);
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    closestIdx = i;
+                }
+            }
+        }
+
+        const ac = aircraft[closestIdx];
+        const flight = (ac.flight || 'Unknown').trim();
+
+        // Get route info
+        let routeInfo = null;
+        try {
+            const routePayload = {
+                planes: [{
+                    callsign: flight,
+                    lat: ac.lat,
+                    lng: ac.lon
+                }]
+            };
+            const routeRes = await fetch('/api/routeset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(routePayload)
+            });
+            if (routeRes.ok) {
+                const routeData = await routeRes.json();
+                if (routeData && routeData.length > 0) {
+                    routeInfo = routeData[0];
+                }
+            }
+        } catch(e) {
+            console.log('Route info unavailable:', e);
+        }
+
+        renderFlight(ac, routeInfo);
+
+    } catch (err) {
+        console.error(err);
+        showError(`Error fetching flight data: ${err.message}`);
+    }
+}
+
+function renderFlight(ac, routeInfo) {
+    document.getElementById('loading-screen').style.display = 'none';
+    document.getElementById('error-screen').style.display = 'none';
+    document.getElementById('flight-display').style.display = 'block';
+    document.getElementById('settings-bar').style.display = 'flex';
+
+    const flight = (ac.flight || 'Unknown').trim();
+    const type = ac.t || '';
+    const model = AIRCRAFT_DB[type] || type || '---';
+    const airlineCode = routeInfo?.airline_code || '';
+    
+    // Extract ICAO airline code from callsign (first 3 letters) as fallback for logo
+    const callsignCode = flight.length >= 3 ? flight.substring(0, 3).toUpperCase() : '';
+    const logoCode = airlineCode || callsignCode;
+
+    // Airline logo
+    const logoContainer = document.getElementById('logo-container');
+    if (logoCode) {
+        logoContainer.innerHTML = `<img class="airline-logo" src="logos/${logoCode}.png" alt="${logoCode}" onerror="this.parentElement.innerHTML='<div class=\\'airline-logo-placeholder\\'>✈</div>'">`;
+    } else {
+        logoContainer.innerHTML = '<div class="airline-logo-placeholder">✈</div>';
+    }
+
+    // Airline name
+    document.getElementById('airline-name').textContent = getAirlineName(flight, airlineCode);
+
+    // Route code (e.g., CDG-MRU)
+    let routeIata = routeInfo?._airport_codes_iata || [];
+    let airportCodes = routeInfo?.airport_codes || [];
+    // Ensure these are arrays (API sometimes returns strings)
+    if (typeof routeIata === 'string') routeIata = routeIata.split(',').map(s => s.trim()).filter(Boolean);
+    if (typeof airportCodes === 'string') airportCodes = airportCodes.split(',').map(s => s.trim()).filter(Boolean);
+    if (!Array.isArray(routeIata)) routeIata = [];
+    if (!Array.isArray(airportCodes)) airportCodes = [];
+    
+    if (routeIata.length > 0) {
+        document.getElementById('route-code').textContent = routeIata.join('-');
+    } else if (airportCodes.length > 0) {
+        document.getElementById('route-code').textContent = airportCodes.join('-');
+    } else {
+        document.getElementById('route-code').textContent = flight;
+    }
+
+    // Aircraft type
+    document.getElementById('aircraft-type').textContent = model;
+
+    // Emergency banner
+    const emergency = ac.emergency;
+    const squawk = ac.squawk || '';
+    const emergencyBanner = document.getElementById('emergency-banner');
+    if ((emergency && emergency !== 'none') || squawk === '7700' || squawk === '7600' || squawk === '7500') {
+        emergencyBanner.style.display = 'block';
+        if (squawk === '7700') emergencyBanner.textContent = '*** EMERGENCY — SQUAWK 7700 ***';
+        else if (squawk === '7600') emergencyBanner.textContent = '*** RADIO FAILURE — SQUAWK 7600 ***';
+        else if (squawk === '7500') emergencyBanner.textContent = '*** HIJACK — SQUAWK 7500 ***';
+        else emergencyBanner.textContent = '*** EMERGENCY ***';
+    } else {
+        emergencyBanner.style.display = 'none';
+    }
+
+    // Airport names
+    const airports = routeInfo?._airports || [];
+    const airportNamesEl = document.getElementById('airport-names');
+    if (airports.length > 0) {
+        airportNamesEl.innerHTML = airports.map((a, i) => 
+            `<div class="${i === 0 ? 'origin' : 'dest'}">${a.name || a.icao || ''}</div>`
+        ).join('');
+    } else {
+        airportNamesEl.textContent = '';
+    }
+
+    // Stats - Altitude (feet)
+    const altBaro = ac.alt_baro;
+    if (altBaro && altBaro !== 'ground') {
+        document.getElementById('altitude').textContent = formatNumber(altBaro) + 'ft';
+    } else if (altBaro === 'ground') {
+        document.getElementById('altitude').textContent = '0ft';
+    } else {
+        document.getElementById('altitude').textContent = '---';
+    }
+
+    // Speed (knots)
+    const gs = ac.gs;
+    if (gs) {
+        document.getElementById('ground-speed').textContent = parseFloat(gs).toFixed(1) + 'kts';
+    } else {
+        document.getElementById('ground-speed').textContent = '---';
+    }
+
+    // Track
+    const track = ac.track;
+    if (track !== undefined && track !== null) {
+        document.getElementById('track').textContent = Math.round(track) + 'deg';
+    } else {
+        document.getElementById('track').textContent = '---';
+    }
+
+    // Vertical rate (ft/min)
+    const baroRate = parseInt(ac.baro_rate || 0);
+    if (baroRate !== 0) {
+        const sign = baroRate > 0 ? '+' : '';
+        document.getElementById('vert-rate').textContent = sign + formatNumber(baroRate) + 'fpm';
+    } else {
+        document.getElementById('vert-rate').textContent = '0fpm';
+    }
+
+    // Bottom info
+    document.getElementById('squawk').textContent = squawk || '---';
+
+    const navHeading = ac.nav_heading;
+    if (navHeading !== undefined && navHeading !== null) {
+        document.getElementById('nav-heading').textContent = Math.round(navHeading) + 'deg';
+    } else {
+        document.getElementById('nav-heading').textContent = '---';
+    }
+
+    document.getElementById('registration').textContent = ac.registration || ac.r || '---';
+
+    const qnh = ac.nav_qnh;
+    document.getElementById('qnh').textContent = qnh ? parseFloat(qnh).toFixed(1) : '---';
+
+    // Progress bar
+    const progressSection = document.getElementById('progress-section');
+    if (airports.length >= 2) {
+        const originLat = airports[0].lat;
+        const originLon = airports[0].lon;
+        const destLat = airports[1].lat;
+        const destLon = airports[1].lon;
+
+        if (originLat && originLon && destLat && destLon) {
+            const totalDistMi = calculateDistance(parseFloat(originLat), parseFloat(originLon), parseFloat(destLat), parseFloat(destLon));
+            const distToDestMi = calculateDistance(parseFloat(ac.lat), parseFloat(ac.lon), parseFloat(destLat), parseFloat(destLon));
+            const miFlown = Math.max(0, totalDistMi - distToDestMi);
+            const pct = totalDistMi > 0 ? Math.min(100, Math.max(0, (miFlown / totalDistMi) * 100)) : 0;
+
+            progressSection.style.display = 'block';
+            document.getElementById('progress-fill').style.width = pct + '%';
+            document.getElementById('miles-flown').textContent = `${Math.round(miFlown)} mi flown`;
+            document.getElementById('miles-to-go').textContent = `${Math.round(distToDestMi)} mi to go`;
+        } else {
+            progressSection.style.display = 'none';
+        }
+    } else {
+        progressSection.style.display = 'none';
+    }
+
+    // Footer distance
+    const dst = ac.dst;
+    const dir = ac.dir;
+    if (dst !== undefined) {
+        let distText = '';
+        if (dir !== undefined) {
+            distText = `${degreesToCompass(dir)} ${Math.round(dir)}° `;
+        }
+        distText += `${parseFloat(dst).toFixed(1)} mi away`;
+        document.getElementById('footer-distance').textContent = distText;
+    } else {
+        document.getElementById('footer-distance').textContent = '';
+    }
+
+    // Coord display
+    const locText = locationLabel ? `${locationLabel} — ` : '';
+    document.getElementById('coord-display').textContent = `${locText}${userLat.toFixed(4)}°, ${userLon.toFixed(4)}°`;
+}
+</script>
+
+</body>
+</html>

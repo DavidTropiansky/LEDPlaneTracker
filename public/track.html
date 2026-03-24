@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LED Plane Tracker — Track Flight</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;font-family:'Courier New',monospace;display:flex;flex-direction:column;align-items:center;min-height:100vh;color:#ccc}
+.nav{width:100%;background:#050505;border-bottom:1px solid #222;padding:8px 20px;display:flex;justify-content:space-between;align-items:center}
+.nav a{color:#f0c040;text-decoration:none;font-size:14px;padding:4px 12px;border:1px solid #333;border-radius:3px;transition:all .2s}
+.nav a:hover,.nav a.active{background:#f0c040;color:#111}
+.nav .nav-links{display:flex;gap:8px}
+.nav .brand{color:#f0c040;font-size:16px;letter-spacing:2px}
+body.fullscreen .nav,body.fullscreen .search-bar,body.fullscreen .hint{display:none!important}
+body.fullscreen .board-frame{margin:0;border:0;border-radius:0;width:100vw;height:100vh;position:fixed;top:0;left:0;z-index:50}
+body.fullscreen canvas{width:100vw;height:100vh;object-fit:contain}
+body.fullscreen .fs-exit{display:block!important;position:fixed;top:10px;right:10px;z-index:200;background:#111;color:#f0c040;border:1px solid #f0c040;padding:6px 14px;font-family:inherit;font-size:14px;cursor:pointer;border-radius:3px;opacity:0.7;transition:opacity .2s}
+body.fullscreen .fs-exit:hover{opacity:1;background:#f0c040;color:#111}
+.fs-exit{display:none}
+.search-bar{width:100%;padding:14px 20px;display:flex;gap:10px;align-items:center;justify-content:center}
+.search-bar input{background:#111;border:2px solid #333;color:#f0c040;padding:10px 16px;font-family:inherit;font-size:18px;width:280px;border-radius:4px;letter-spacing:2px;text-transform:uppercase}
+.search-bar input::placeholder{color:#333;text-transform:none;letter-spacing:0}
+.search-bar input:focus{outline:none;border-color:#f0c040}
+.search-bar button{background:#1a1a1a;color:#f0c040;border:2px solid #f0c040;padding:10px 24px;font-family:inherit;font-size:16px;cursor:pointer;border-radius:4px;letter-spacing:1px;transition:all .2s}
+.search-bar button:hover{background:#f0c040;color:#111}
+.search-bar .status{color:#444;font-size:12px;min-width:120px}
+.board-frame{background:#000;border:6px solid #1a1a1a;border-radius:6px;box-shadow:0 0 40px rgba(0,0,0,.8);margin:8px 16px;position:relative;overflow:hidden;width:calc(100% - 32px)}
+canvas{display:block;width:100%;height:auto}
+.overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.95);z-index:10;gap:12px}
+.overlay.hidden{display:none}
+.overlay h2{color:#f0c040;font-size:24px;letter-spacing:3px}
+.overlay p{color:#666;font-size:14px;text-align:center;max-width:400px}
+.overlay .err{color:#ff4444}
+.spinner{width:36px;height:36px;border:3px solid #222;border-top-color:#f0c040;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hint{color:#333;font-size:12px;margin-top:8px;text-align:center}
+.hint span{color:#555}
+</style>
+</head>
+<body>
+<button class="fs-exit" id="fs-exit" onclick="toggleFullscreen()">✕ EXIT</button>
+<div class="nav">
+  <span class="brand">✈ LED PLANE TRACKER</span>
+  <div class="nav-links">
+    <a href="/nearest.html">NEAREST</a>
+    <a href="/track.html" class="active">TRACK FLIGHT</a>
+    <a href="#" onclick="toggleFullscreen();return false">FULL SCREEN</a>
+  </div>
+</div>
+<div class="search-bar">
+  <input type="text" id="flight-input" placeholder="Enter callsign..." maxlength="10" autofocus>
+  <button onclick="trackFlight()">TRACK</button>
+  <span class="status" id="status"></span>
+</div>
+<div class="board-frame">
+  <canvas id="board"></canvas>
+  <div class="overlay" id="overlay-prompt">
+    <h2>✈ TRACK A FLIGHT</h2>
+    <p>Enter a flight callsign above to track it in real-time on the dot matrix display</p>
+  </div>
+  <div class="overlay hidden" id="overlay-loading"><div class="spinner"></div><h2>SEARCHING...</h2></div>
+  <div class="overlay hidden" id="overlay-error"><h2>NOT FOUND</h2><p id="error-msg" class="err"></p></div>
+</div>
+<div class="hint">Examples: <span>UAL123</span> · <span>DAL456</span> · <span>SWA789</span> · <span>BAW117</span> · <span>SIA24</span></div>
+<script>
+// ═══ 5x7 BITMAP FONT ═══
+const FONT={
+' ':[0,0,0,0,0,0,0],'!':[4,4,4,4,4,0,4],'"':[10,10,0,0,0,0,0],'#':[10,31,10,10,31,10,0],'$':[4,15,20,14,5,30,4],'%':[24,25,2,4,8,19,3],'&':[12,18,12,13,18,13,0],"'":[4,4,0,0,0,0,0],'(':[2,4,8,8,8,4,2],')':[8,4,2,2,2,4,8],'*':[0,4,21,14,21,4,0],'+':[0,4,4,31,4,4,0],',':[0,0,0,0,0,4,8],'-':[0,0,0,31,0,0,0],'.':[0,0,0,0,0,0,4],'/':[1,1,2,4,8,16,16],
+'0':[14,17,19,21,25,17,14],'1':[4,12,4,4,4,4,14],'2':[14,17,1,2,4,8,31],'3':[14,17,1,6,1,17,14],'4':[2,6,10,18,31,2,2],'5':[31,16,30,1,1,17,14],'6':[6,8,16,30,17,17,14],'7':[31,1,2,4,8,8,8],'8':[14,17,17,14,17,17,14],'9':[14,17,17,15,1,2,12],
+':':[0,0,4,0,4,0,0],';':[0,0,4,0,4,4,8],'<':[1,2,4,8,4,2,1],'=':[0,0,31,0,31,0,0],'>':[16,8,4,2,4,8,16],'?':[14,17,1,2,4,0,4],'@':[14,17,23,21,23,16,14],
+'A':[14,17,17,31,17,17,17],'B':[30,17,17,30,17,17,30],'C':[14,17,16,16,16,17,14],'D':[30,17,17,17,17,17,30],'E':[31,16,16,30,16,16,31],'F':[31,16,16,30,16,16,16],'G':[14,17,16,23,17,17,15],'H':[17,17,17,31,17,17,17],'I':[14,4,4,4,4,4,14],'J':[7,2,2,2,2,18,12],'K':[17,18,20,24,20,18,17],'L':[16,16,16,16,16,16,31],'M':[17,27,21,21,17,17,17],'N':[17,17,25,21,19,17,17],'O':[14,17,17,17,17,17,14],'P':[30,17,17,30,16,16,16],'Q':[14,17,17,17,21,18,13],'R':[30,17,17,30,20,18,17],'S':[14,17,16,14,1,17,14],'T':[31,4,4,4,4,4,4],'U':[17,17,17,17,17,17,14],'V':[17,17,17,17,10,10,4],'W':[17,17,17,21,21,27,17],'X':[17,17,10,4,10,17,17],'Y':[17,17,10,4,4,4,4],'Z':[31,1,2,4,8,16,31],
+};
+
+// ═══ HIGH-RES DOT MATRIX ═══
+const COLS=260, ROWS=110, DOT_SP=4, DOT_R=1.4;
+const canvas=document.getElementById('board'), ctx=canvas.getContext('2d');
+canvas.width=COLS*DOT_SP; canvas.height=ROWS*DOT_SP;
+
+const C={white:'#e0e0ff',amber:'#f0c040',red:'#ff3333',dim:'#1a1a1a'};
+let grid=[];
+
+function clearGrid(){grid=[];for(let r=0;r<ROWS;r++){grid[r]=[];for(let c=0;c<COLS;c++)grid[r][c]=null}}
+
+function render(){
+  ctx.fillStyle='#050505';ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(let r=0;r<ROWS;r++){for(let c=0;c<COLS;c++){
+    const x=c*DOT_SP+DOT_SP/2, y=r*DOT_SP+DOT_SP/2, col=grid[r][c];
+    ctx.beginPath();ctx.arc(x,y,DOT_R,0,Math.PI*2);
+    if(col){ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=3;ctx.fill();ctx.shadowBlur=0}
+    else{ctx.fillStyle='#0c0c0c';ctx.fill()}
+  }}
+}
+
+function drawText(text,col,row,color,scale){
+  scale=scale||1;let cx=col;const upper=text.toUpperCase();
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];const glyph=FONT[ch]||FONT[upper[i]]||FONT['?'];
+    if(!glyph){cx+=6*scale;continue}
+    for(let gy=0;gy<7;gy++){const rb=glyph[gy];for(let gx=0;gx<5;gx++){if(rb&(16>>gx)){
+      for(let sy=0;sy<scale;sy++){for(let sx=0;sx<scale;sx++){
+        const gr=row+gy*scale+sy,gc=cx+gx*scale+sx;
+        if(gr>=0&&gr<ROWS&&gc>=0&&gc<COLS)grid[gr][gc]=color;
+      }}
+    }}}
+    cx+=6*scale;
+  }
+}
+
+function drawLogo(img,col,row,dotW,dotH){
+  const tc=document.createElement('canvas'),tx=tc.getContext('2d');
+  tc.width=dotW;tc.height=dotH;tx.drawImage(img,0,0,dotW,dotH);
+  const id=tx.getImageData(0,0,dotW,dotH),px=id.data;
+  for(let dy=0;dy<dotH;dy++){for(let dx=0;dx<dotW;dx++){
+    const i=(dy*dotW+dx)*4;
+    const r=px[i],g=px[i+1],b=px[i+2],a=px[i+3];
+    const brightness=(r+g+b)/3;
+    if(brightness>30&&a>60){
+      const hex='#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+      const gr=row+dy,gc=col+dx;
+      if(gr>=0&&gr<ROWS&&gc>=0&&gc<COLS)grid[gr][gc]=hex;
+    }
+  }}
+}
+
+function drawLine(row,color){for(let c=0;c<COLS;c+=2)if(row>=0&&row<ROWS)grid[row][c]=color||C.dim}
+
+// ═══ DATA ═══
+const AIRCRAFT_DB={"A19N":"A319neo","A20N":"A320neo","A21N":"A321neo","A318":"A318","A319":"A319","A320":"A320","A321":"A321","A332":"A330-200","A333":"A330-300","A339":"A330-900","A359":"A350-900","A35K":"A350-1000","A388":"A380","AT76":"ATR 72","B37M":"737 MAX 7","B38M":"737 MAX 8","B39M":"737 MAX 9","B3XM":"737 MAX 10","B712":"717","B737":"737-700","B738":"737-800","B739":"737-900","B744":"747-400","B748":"747-8","B752":"757-200","B753":"757-300","B763":"767-300","B764":"767-400","B772":"777-200","B773":"777-300","B77L":"777-200LR","B77W":"777-300ER","B788":"787-8","B789":"787-9","B78X":"787-10","BCS1":"A220-100","BCS3":"A220-300","CRJ2":"CRJ 200","CRJ7":"CRJ 700","CRJ9":"CRJ 900","DH8D":"Dash 8","E170":"E170","E175":"E175","E190":"E190","E195":"E195","E75L":"E175","E75S":"E175","GLF6":"G650","MD11":"MD-11"};
+const AIRLINES={"AAL":"American","ACA":"Air Canada","AFR":"Air France","ANA":"ANA","ASA":"Alaska","BAW":"British Airways","CPA":"Cathay","DAL":"Delta","DLH":"Lufthansa","EDV":"Endeavor","ENY":"Envoy","ETD":"Etihad","EVA":"EVA Air","FDX":"FedEx","GJS":"GoJet","HAL":"Hawaiian","IBE":"Iberia","JAL":"JAL","JBU":"JetBlue","KAL":"Korean Air","KLM":"KLM","NKS":"Spirit","QFA":"Qantas","QTR":"Qatar","RPA":"Republic","RYR":"Ryanair","SIA":"Singapore","SKW":"SkyWest","SWA":"Southwest","SWR":"Swiss","THY":"Turkish","UAE":"Emirates","UAL":"United","UPS":"UPS","VIR":"Virgin Atl","WJA":"WestJet"};
+
+function airlineName(cs){if(!cs||cs.length<3)return cs||'???';return AIRLINES[cs.substring(0,3).toUpperCase()]||cs}
+function acModel(t){return AIRCRAFT_DB[t]||t||'???'}
+function fmtAltNum(a){if(!a||a==='ground')return a==='ground'?'GND':'---';const k=a/1000;return k>=10?Math.round(k)+'K':k.toFixed(1)+'K'}
+function fmtSpdNum(s){if(!s)return'---';return ''+Math.round(parseFloat(s))}
+function fmtVr(v){if(!v||v==0)return'0fpm';const r=Math.round(v);return(r>0?'+':'')+r+'fpm'}
+function compass(d){if(d==null)return'';return["N","NE","E","SE","S","SW","W","NW"][Math.round((d%360)/45)%8]}
+function haversine(lat1,lon1,lat2,lon2){const R=3958.8,dLat=(lat2-lat1)*Math.PI/180,dLon=(lon2-lon1)*Math.PI/180,a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))}
+
+function showOverlay(id){document.querySelectorAll('.overlay').forEach(e=>e.classList.add('hidden'));if(id)document.getElementById(id).classList.remove('hidden')}
+
+let trackedCallsign=null,refreshTimer=null;
+
+async function trackFlight(){
+  const input=document.getElementById('flight-input').value.trim().toUpperCase();
+  if(!input)return;
+  trackedCallsign=input;showOverlay('overlay-loading');
+  document.getElementById('status').textContent='Searching...';
+  try{
+    const r=await fetch(`/api/flight/${input}`);
+    if(!r.ok)throw new Error('API '+r.status);
+    const data=await r.json();const ac=(data.ac||[]);
+    if(ac.length===0)throw new Error(`Flight ${input} not found. It may not be airborne.`);
+    const plane=ac[0];const cs=(plane.flight||input).trim();
+    let routeStr='',flightProgress=0;
+    try{
+      const rr=await fetch('/api/routeset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({planes:[{callsign:cs,lat:plane.lat,lng:plane.lon}]})});
+      if(rr.ok){const rd=await rr.json();if(rd&&rd.length>0){const entry=rd[0];
+        let codes=entry._airport_codes_iata||[];if(!Array.isArray(codes))codes=String(codes||'').split(',').map(s=>s.trim()).filter(Boolean);
+        if(codes.length===0){let ac2=entry.airport_codes||[];if(!Array.isArray(ac2))ac2=String(ac2||'').split(',').map(s=>s.trim()).filter(Boolean);codes=ac2}
+        if(codes.length>=2)routeStr=codes[0]+' - '+codes[codes.length-1];else if(codes.length===1)routeStr=codes[0];
+        const airports=entry._airports||[];
+        if(airports.length>=2){const oLat=parseFloat(airports[0].lat),oLon=parseFloat(airports[0].lon),dLat=parseFloat(airports[airports.length-1].lat),dLon=parseFloat(airports[airports.length-1].lon);
+          const totalDist=haversine(oLat,oLon,dLat,dLon),toDest=haversine(parseFloat(plane.lat),parseFloat(plane.lon),dLat,dLon);
+          if(totalDist>0)flightProgress=Math.max(0,Math.min(1,(totalDist-toDest)/totalDist));
+        }
+      }}
+    }catch(e){console.log('Route error:',e)}
+    renderBoard(plane,routeStr,flightProgress);showOverlay(null);
+    document.getElementById('status').textContent=`Tracking ${cs} - auto-refresh 12s`;
+    if(refreshTimer)clearInterval(refreshTimer);refreshTimer=setInterval(()=>refreshTrack(),12000);
+  }catch(e){showOverlay('overlay-error');document.getElementById('error-msg').textContent=e.message;document.getElementById('status').textContent=''}
+}
+
+async function refreshTrack(){
+  if(!trackedCallsign)return;
+  try{const r=await fetch(`/api/flight/${trackedCallsign}`);if(!r.ok)return;const data=await r.json();const ac=(data.ac||[]);if(ac.length===0)return;
+    const plane=ac[0];const cs=(plane.flight||trackedCallsign).trim();
+    let routeStr='',flightProgress=0;
+    try{
+      const rr=await fetch('/api/routeset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({planes:[{callsign:cs,lat:plane.lat,lng:plane.lon}]})});
+      if(rr.ok){const rd=await rr.json();if(rd&&rd.length>0){const entry=rd[0];
+        let codes=entry._airport_codes_iata||[];if(!Array.isArray(codes))codes=String(codes||'').split(',').map(s=>s.trim()).filter(Boolean);
+        if(codes.length===0){let ac2=entry.airport_codes||[];if(!Array.isArray(ac2))ac2=String(ac2||'').split(',').map(s=>s.trim()).filter(Boolean);codes=ac2}
+        if(codes.length>=2)routeStr=codes[0]+' - '+codes[codes.length-1];else if(codes.length===1)routeStr=codes[0];
+        const airports=entry._airports||[];
+        if(airports.length>=2){const oLat=parseFloat(airports[0].lat),oLon=parseFloat(airports[0].lon),dLat=parseFloat(airports[airports.length-1].lat),dLon=parseFloat(airports[airports.length-1].lon);
+          const totalDist=haversine(oLat,oLon,dLat,dLon),toDest=haversine(parseFloat(plane.lat),parseFloat(plane.lon),dLat,dLon);
+          if(totalDist>0)flightProgress=Math.max(0,Math.min(1,(totalDist-toDest)/totalDist));
+        }
+      }}
+    }catch(e){}
+    renderBoard(plane,routeStr,flightProgress);showOverlay(null);
+  }catch(e){}
+}
+
+function renderBoard(ac,routeStr,progress){
+  clearGrid();
+  const cs=(ac.flight||'???').trim();
+  const name=airlineName(cs);
+  const route=routeStr||'';
+  const typ=acModel(ac.t||'');
+  const altNum=fmtAltNum(ac.alt_baro);
+  const spdNum=fmtSpdNum(ac.gs);
+  const trk=ac.track!=null?Math.round(ac.track)+'deg '+compass(ac.track):'---';
+  const vr=fmtVr(parseInt(ac.baro_rate||0));
+  const reg=ac.r||ac.registration||'---';
+  const sqwk=ac.squawk||'---';
+  const lat=ac.lat?parseFloat(ac.lat).toFixed(4):'?';
+  const lon=ac.lon?parseFloat(ac.lon).toFixed(4):'?';
+
+  const logoCode=cs.length>=3?cs.substring(0,3).toUpperCase():'';
+  const logoImg=new Image();logoImg.crossOrigin='anonymous';
+  logoImg.onload=function(){drawLogo(logoImg,2,2,36,36);render()};
+  logoImg.onerror=function(){render()};
+  logoImg.src=`/logos/${logoCode}.png`;
+
+  const tl=42;
+  drawText(name,tl,2,C.white,2);
+  drawText(cs,tl,18,'#888888',1);
+  drawText(route,tl,28,C.amber,2);
+  drawLine(44,C.dim);
+  drawText('Aircraft: '+typ,2,47,C.white,1);
+  drawText('Reg: '+reg+'   Squawk: '+sqwk,2,57,'#888888',1);
+  drawLine(66,C.dim);
+  const altLabel='ALT '+altNum;
+  drawText(altLabel,2,69,C.white,2);
+  drawText('FT',2+altLabel.length*12+2,76,'#888888',1);
+  const spdLabel='SPD '+spdNum;
+  drawText(spdLabel,140,69,C.white,2);
+  drawText('KTS',140+spdLabel.length*12+2,76,'#888888',1);
+  drawText('TRK '+trk,2,85,C.amber,1);
+  drawText('VR '+vr,150,85,C.amber,1);
+  drawText('Pos: '+lat+', '+lon,2,93,'#666666',1);
+
+  // ═══ GREEN PROGRESS BAR (only if route data exists) ═══
+  if(route){
+    const barY=ROWS-4;const pct=progress||0;const filledCols=Math.round(pct*(COLS-4));
+    for(let r=barY;r<barY+3;r++){for(let c=2;c<COLS-2;c++){if(r>=0&&r<ROWS)grid[r][c]='#0a1a0a'}}
+    for(let r=barY;r<barY+3;r++){for(let c=2;c<2+filledCols;c++){if(r>=0&&r<ROWS&&c<COLS-2)grid[r][c]='#00ff44'}}
+  }
+
+  render();
+}
+
+document.getElementById('flight-input').addEventListener('keydown',e=>{if(e.key==='Enter')trackFlight()});
+const params=new URLSearchParams(window.location.search);
+if(params.get('flight')){document.getElementById('flight-input').value=params.get('flight');trackFlight()}
+
+function toggleFullscreen(){
+  const b=document.body;
+  if(b.classList.contains('fullscreen')){b.classList.remove('fullscreen');if(document.exitFullscreen)document.exitFullscreen().catch(()=>{})}
+  else{b.classList.add('fullscreen');if(document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(()=>{})}
+}
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)document.body.classList.remove('fullscreen')});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('fullscreen'))document.body.classList.remove('fullscreen')});
+</script>
+</body>
+</html>
